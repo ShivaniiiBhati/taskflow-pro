@@ -6,7 +6,7 @@ from app.database import get_db
 from app.models.task import Task
 from app.models.dependency import Dependency
 from app.schemas.dependency import DependencyCreate, DependencyOut, CriticalPathOut
-from app.services import dag_engine
+from app.services import dag_engine, scheduler
 from app.auth import require_auth
 
 router = APIRouter(prefix="/dependencies", tags=["dependencies"], dependencies=[Depends(require_auth)])
@@ -57,6 +57,7 @@ def create_dependency(payload: DependencyCreate, db: Session = Depends(get_db)):
     # The successor just gained a new predecessor -- its own readiness
     # may now be Blocked, and that can cascade further downstream.
     dag_engine.recompute_task_and_cascade(db, payload.successor_id)
+    scheduler.reconcile_task_schedule(db, payload.successor_id)
 
     return dependency.to_dict()
 

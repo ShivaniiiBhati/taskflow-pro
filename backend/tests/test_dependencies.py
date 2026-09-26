@@ -1,3 +1,4 @@
+from datetime import date, timedelta
 from tests.helpers import create_task, link
 
 
@@ -57,3 +58,46 @@ def test_deleting_dependency_recomputes_readiness(client):
 
     # B has no predecessors left, so it should be Ready again.
     assert client.get(f"/tasks/{b['id']}").json()["readiness"] == "READY"
+
+def test_adding_dependency_reconciles_successor_schedule(client):
+    """
+    If a dependency is added after tasks already have schedules,
+    the successor must be pushed later when its prerequisite finishes
+    after its current start date.
+    """
+    today = date.today()
+
+    # A finishes on day +5.
+    a = create_task(
+        client,
+        "A",
+        duration_days=5,
+        start_date=today,
+    )
+
+    # B currently starts on day +2, before A finishes.
+    b = create_task(
+        client,
+        "B",
+        duration_days=2,
+        start_date=today + timedelta(days=2),
+    )
+
+    # Before the dependency exists, B keeps its original schedule.
+    assert client.get(f"/tasks/{b['id']}").json()["start_date"] == (
+        today + timedelta(days=2)
+    ).isoformat()
+
+    # Adding A -> B should force B to start when A finishes.
+    resp = link(client, a["id"], b["id"])
+    assert resp.status_code == 201, resp.text
+
+    b_after = client.get(f"/tasks/{b['id']}").json()
+
+    assert b_after["start_date"] == (
+        today + timedelta(days=5)
+    ).isoformat()
+
+    assert b_after["end_date"] == (
+        today + timedelta(days=7)
+    ).isoformat()

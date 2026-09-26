@@ -82,3 +82,31 @@ def propagate_schedule_change(db: Session, changed_task_id: int) -> list[int]:
         # which is fine (see module docstring).
 
     return affected
+
+def reconcile_task_schedule(db: Session, task_id: int) -> list[int]:
+    """
+    Reconcile a task's schedule against all of its current predecessors.
+
+    This is used when the dependency graph changes but the task's own
+    schedule did not. If the new prerequisite constraints force the
+    task later, its downstream dependents are propagated as well.
+    """
+    task = db.get(Task, task_id)
+    if task is None:
+        return []
+
+    predecessors = get_predecessors(db, task_id)
+    if not predecessors:
+        return []
+
+    required_start = max(p.end_date for p in predecessors)
+
+    if required_start <= task.start_date:
+        return []
+
+    task.start_date = required_start
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    return [task_id] + propagate_schedule_change(db, task_id)
