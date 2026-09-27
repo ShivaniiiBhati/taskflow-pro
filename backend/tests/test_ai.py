@@ -52,3 +52,77 @@ def test_valid_suggestion_within_candidate_set_is_kept():
     raw_response = '{"suggestions": [{"task_id": 2, "reason": "Needs the schema first."}]}'
     valid = dependency_ai._parse_and_validate(raw_response, valid_ids={1, 2, 3})
     assert valid == [{"task_id": 2, "reason": "Needs the schema first."}]
+
+
+def test_heuristic_zero_overlap_produces_suggestion(client):
+    # Lexically completely disjoint for _tokenize (which drops words <= 2 chars like 'ui')
+    # "design" vs "update" -> 0 overlap
+    create_task(client, "Frontend Module", description="design the ui")
+    resp = client.post("/ai/suggest-dependencies", json={
+        "title": "Backend Connection",
+        "description": "update the ui"
+    })
+    body = resp.json()
+    assert body["mode"] == "mock"
+    assert len(body["suggestions"]) > 0
+    # The heuristic connects them via shared tech word "ui"
+    assert "Frontend Module" in body["suggestions"][0]["title"]
+
+
+def test_heuristic_unrelated_task_produces_empty(client):
+    # No shared tech words, no lexical overlap
+    create_task(client, "Water the plants", description="Give them sunlight and H2O")
+    resp = client.post("/ai/suggest-dependencies", json={
+        "title": "Walk the dog",
+        "description": "Go to the park"
+    })
+    body = resp.json()
+    assert body["mode"] == "mock"
+    assert len(body["suggestions"]) == 0
+
+
+def test_existing_prerequisites_are_not_suggested(client):
+    req_task = create_task(client, "Requirements", description="Gather specs")
+    db_task = create_task(client, "Database", description="Setup tables")
+    # Link them
+    client.post("/dependencies", json={
+        "predecessor_id": req_task["id"],
+        "successor_id": db_task["id"]
+    })
+
+    # Suggest dependencies for Database
+    resp = client.post("/ai/suggest-dependencies", json={
+        "task_id": db_task["id"],
+        "title": db_task["title"]
+    })
+    body = resp.json()
+    assert body["mode"] == "mock"
+    # Even though Requirements is semantically related to Database, it's already a prerequisite
+    assert len(body["suggestions"]) == 0
+
+
+def test_current_task_not_suggested(client):
+    db_task = create_task(client, "Database Setup", description="Create the schema")
+
+    resp = client.post("/ai/suggest-dependencies", json={
+        "task_id": db_task["id"],
+        "title": db_task["title"]
+    })
+    body = resp.json()
+    assert body["mode"] == "mock"
+    # Should not suggest itself
+    assert len(body["suggestions"]) == 0
+
+
+def test_heuristic_requires_shared_tech_terminology(client):
+    # Candidate is highly technical but new task has no tech words
+    create_task(client, "Setup database schema", description="PostgreSQL table api backend")
+
+    resp = client.post("/ai/suggest-dependencies", json={
+        "title": "Walk the dog",
+        "description": "Go to the park"
+    })
+    body = resp.json()
+    assert body["mode"] == "mock"
+    # Should not suggest candidate just because the candidate has tech words
+    assert len(body["suggestions"]) == 0

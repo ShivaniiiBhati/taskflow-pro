@@ -61,7 +61,8 @@ class Candidate:
 
 
 def build_candidate_list(all_tasks: list[Task], new_title: str, new_description: str,
-                          exclude_task_id: int | None, top_k: int = TOP_K_CANDIDATES) -> list[Candidate]:
+                          exclude_task_id: int | None, existing_prereq_ids: set[int] | None = None,
+                          top_k: int = TOP_K_CANDIDATES) -> list[Candidate]:
     """
     Local, offline pre-filter: rank existing tasks by lexical overlap
     with the new task's text, and keep only the top_k. This is the
@@ -72,6 +73,8 @@ def build_candidate_list(all_tasks: list[Task], new_title: str, new_description:
     scored = []
     for task in all_tasks:
         if exclude_task_id is not None and task.id == exclude_task_id:
+            continue
+        if existing_prereq_ids and task.id in existing_prereq_ids:
             continue
         task_tokens = _tokenize(f"{task.title} {task.description}")
         score = _jaccard_similarity(new_tokens, task_tokens)
@@ -133,23 +136,74 @@ def _call_anthropic(system_prompt: str, user_prompt: str) -> str:
     return "\n".join(text_blocks)
 
 
-def _mock_response(candidates: list[Candidate]) -> str:
+def _mock_response(new_title: str, new_description: str, candidates: list[Candidate]) -> str:
     """
-    Deterministic offline fallback: suggest the single strongest
-    lexical match, if any, with a templated (clearly non-LLM) reason.
+    Deterministic offline fallback: suggest the strongest lexical match.
+    If exact lexical overlap is 0, fallback to a deterministic semantic
+    heuristic (e.g. shared lifecycle terminology).
     Used only when no API key is configured, and always labeled as
-    such in the API response so it's never mistaken for a live model
-    call.
+    such in the API response.
     """
-    if not candidates or candidates[0].score == 0.0:
+    if not candidates:
         return json.dumps({"suggestions": []})
-    top = candidates[0]
-    return json.dumps({
-        "suggestions": [{
-            "task_id": top.task.id,
-            "reason": f"(mock mode) Shares significant wording with '{top.task.title}'.",
-        }]
-    })
+
+    best_cand = None
+    best_score = -1.0
+    best_reason = ""
+
+    new_text = f"{new_title} {new_description}".lower()
+
+    tech_words = {
+        "database", "api", "backend", "frontend", "ui", "schema",
+        "requirements", "test", "deploy", "design", "plan", "architecture",
+        "server", "client", "integration", "component", "data", "model",
+        "setup", "config", "environment", "pipeline", "release"
+    }
+
+    for c in candidates:
+        cand_text = f"{c.task.title} {c.task.description}".lower()
+
+        # Base score is the lexical overlap, heavily weighted
+        score = c.score * 10.0
+        reason = ""
+
+        if c.score > 0:
+            reason = f"(mock mode) Shares significant wording with '{c.task.title}'."
+
+        # Heuristic 1: One explicitly mentions the other's title
+        if c.task.title.lower() in new_text:
+            score += 5.0
+            if not reason:
+                reason = f"(mock mode) Description explicitly mentions '{c.task.title}'."
+
+        # Heuristic 2: Shared lifecycle/technical terminology
+        new_tech = set(new_text.split()) & tech_words
+        cand_tech = set(cand_text.split()) & tech_words
+        shared_tech = new_tech & cand_tech
+        if shared_tech:
+            score += 1.0
+            if not reason:
+                terms = ", ".join(sorted(shared_tech))
+                reason = f"(mock mode) Related implementation-stage candidate; shared terms: {terms}."
+
+        # Heuristic 3: Explicit dependency phrasing in the new task
+        if "depend" in new_text or "requir" in new_text or "need" in new_text or "block" in new_text:
+            score += 0.5
+
+        if score > best_score:
+            best_score = score
+            best_cand = c
+            best_reason = reason or "(mock mode) Identified as a potential contextual prerequisite."
+
+    if best_cand and best_score > 0:
+        return json.dumps({
+            "suggestions": [{
+                "task_id": best_cand.task.id,
+                "reason": best_reason,
+            }]
+        })
+
+    return json.dumps({"suggestions": []})
 
 
 def _parse_and_validate(raw_response: str, valid_ids: set[int]) -> list[dict]:
@@ -186,12 +240,19 @@ def suggest_dependencies(db: Session, title: str, description: str,
     "mock". Never writes to the database.
     """
     all_tasks = db.query(Task).all()
-    candidates = build_candidate_list(all_tasks, title, description, exclude_task_id)
+
+    existing_prereq_ids = set()
+    if exclude_task_id is not None:
+        current_task = next((t for t in all_tasks if t.id == exclude_task_id), None)
+        if current_task:
+            existing_prereq_ids = {edge.predecessor_id for edge in current_task.incoming_edges}
+
+    candidates = build_candidate_list(all_tasks, title, description, exclude_task_id, existing_prereq_ids)
     valid_ids = {c.task.id for c in candidates}
     by_id = {c.task.id: c for c in candidates}
 
     if settings.ai_mock_mode:
-        raw = _mock_response(candidates)
+        raw = _mock_response(title, description, candidates)
         mode = "mock"
     else:
         system_prompt, user_prompt = build_prompt(title, description, candidates)
@@ -202,7 +263,7 @@ def suggest_dependencies(db: Session, title: str, description: str,
             # Provider hiccup: degrade gracefully rather than 500ing
             # the whole create-task flow, which must never depend on
             # this call succeeding.
-            raw = _mock_response(candidates)
+            raw = _mock_response(title, description, candidates)
             mode = "mock"
 
     validated = _parse_and_validate(raw, valid_ids)
