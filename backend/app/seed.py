@@ -7,7 +7,7 @@ straight chain long enough to make the Critical Path view meaningful.
 
 Run with:  python -m app.seed   (from the backend/ directory)
 """
-from datetime import date, timedelta
+from datetime import date
 
 from app.database import Base, engine, SessionLocal
 from app.models.task import Task, TaskStatus
@@ -35,7 +35,7 @@ EDGES = [
     ("Project Requirements", "Backend API"),
     ("Database Schema", "Backend API"),
     ("Backend API", "Authentication"),
-    ("Backend API", "Integration Tests"),        # diamond leg 1
+    ("Backend API", "Frontend Dashboard"),        # diamond leg 1
     ("Authentication", "Integration Tests"),      # diamond converges here
     ("Frontend Dashboard", "Integration Tests"),  # diamond leg 2
     ("Integration Tests", "Bug Fixes"),
@@ -54,19 +54,17 @@ def seed():
 
         start = date.today()
         title_to_task = {}
-        cursor = start
         for title, description, duration in TASKS:
             task = Task(
                 title=title,
                 description=description,
-                start_date=cursor,
+                start_date=start,
                 duration_days=duration,
                 status=TaskStatus.BACKLOG,
             )
             db.add(task)
             db.flush()  # get task.id without a full commit
             title_to_task[title] = task
-            cursor = cursor + timedelta(days=1)  # stagger seed dates a little
 
         db.commit()
 
@@ -81,6 +79,11 @@ def seed():
             task.readiness = dag_engine.compute_readiness(db, task)
             db.add(task)
         db.commit()
+
+        # Reconcile schedule so dates are logically compatible
+        from app.services import scheduler
+        for task in title_to_task.values():
+            scheduler.propagate_schedule_change(db, task.id)
 
         print(f"Seeded {len(TASKS)} tasks and {len(EDGES)} dependencies.")
         print("Deliberate diamond: Backend API -> (Authentication, Frontend Dashboard) -> Integration Tests")
