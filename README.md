@@ -239,6 +239,7 @@ Accept -> POST /dependencies -> same cycle check as a manual edge
 - Nothing from the AI is ever written to the graph automatically — human
   approval is required, and approval routes through the exact same
   deterministic cycle-detection code path as a manually drawn dependency.
+  **"AI proposes, deterministic DAG engine decides."**
 - If no `ANTHROPIC_API_KEY` is set, the endpoint runs in a disclosed **mock
   mode** (`"mode": "mock"` in the response) so the feature is demoable
   offline; see `app/services/dependency_ai.py`.
@@ -301,8 +302,7 @@ python -m venv .venv
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env           # optionally add a real ANTHROPIC_API_KEY;
-                                # change API_TOKEN from the default if this
-                                # will ever be reachable outside localhost
+                                # You MUST set a secure API_TOKEN
 ```
 
 **Frontend:**
@@ -331,6 +331,7 @@ migration step needed for this prototype.
 
 ## Running Tests
 
+**Backend:**
 ```bash
 cd backend
 source .venv/bin/activate
@@ -343,6 +344,15 @@ vs. shared upstream changes, rollback-on-regression cascades, and the AI
 suggestion validation/hallucination guards. Tests run against an isolated
 temporary SQLite file and force the AI service into mock mode, so they need
 no network access or API key.
+
+**Frontend:**
+```bash
+cd frontend
+npm run test
+```
+
+Vitest + React Testing Library tests cover the Kanban UI, optimistic status
+updates and error rollback, and AI suggestion accept/conflict behavior.
 
 ## Seed Data
 
@@ -431,6 +441,11 @@ checking), Reject discards it.
   its true prerequisite may not surface as a candidate.
 - The critical path view is explicitly a bonus feature and has had less
   polish than the core DAG/scheduling engine.
+
+## Known Failure Cases
+
+- **Semantic mismatch:** The lexical pre-filtering may miss semantically equivalent or synonymous tasks, resulting in the AI not being provided the correct candidates to suggest.
+- **Data overwrite:** Concurrent edits are not conflict-resolved beyond the current persistence behavior (last-write-wins), which could overwrite another user's immediate changes.
 
 ## Future Improvements
 

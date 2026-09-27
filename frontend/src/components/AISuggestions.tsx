@@ -57,12 +57,17 @@ export default function AISuggestions({ taskId, title, description, onAccepted }
 
   return (
     <div className="mt-4 border-t pt-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-700">AI Dependency Suggestions</h3>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-700">AI Dependency Suggestions</h3>
+          <p className="text-[10px] text-slate-500 italic mt-0.5">
+            AI proposes candidate dependencies. The deterministic DAG engine verifies them after your approval.
+          </p>
+        </div>
         <button
           onClick={fetchSuggestions}
           disabled={loading}
-          className="text-xs px-2 py-1 rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+          className="text-xs px-2 py-1 rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 shrink-0"
         >
           {loading ? 'Thinking…' : 'Suggest Dependencies'}
         </button>
@@ -87,7 +92,7 @@ export default function AISuggestions({ taskId, title, description, onAccepted }
               <span className="font-medium text-indigo-900">
                 Suggested prerequisite: {s.title}
               </span>
-              <span className="text-indigo-400">match {Math.round(s.similarity_score * 100)}%</span>
+              <span className="text-indigo-400">lexical overlap {Math.round(s.similarity_score * 100)}%</span>
             </div>
             <p className="text-indigo-700 mt-1">{s.reason}</p>
             <div className="mt-2 flex gap-2">

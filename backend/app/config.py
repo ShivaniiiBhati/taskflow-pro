@@ -26,7 +26,7 @@ class Settings:
     # API from being open to the public internet, and it's disclosed
     # as a Known Limitation in the README rather than presented as
     # full authentication.
-    API_TOKEN: str = os.getenv("API_TOKEN", "dev-local-token")
+    API_TOKEN: str = os.getenv("API_TOKEN", "").strip()
 
     @property
     def ai_mock_mode(self) -> bool:

@@ -23,5 +23,5 @@ _bearer_scheme = HTTPBearer(auto_error=False)
 def require_auth(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme)) -> None:
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(status_code=401, detail="Missing bearer token.")
-    if credentials.credentials != settings.API_TOKEN:
+    if not settings.API_TOKEN or credentials.credentials != settings.API_TOKEN:
         raise HTTPException(status_code=401, detail="Invalid bearer token.")

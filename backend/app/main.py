@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -8,10 +9,16 @@ from app.api import tasks, dependencies, ai
 # Import models so their tables are registered on Base before create_all.
 from app import models  # noqa: F401
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    Base.metadata.create_all(bind=engine)
+    yield
+
 app = FastAPI(
     title="TaskFlow Pro API",
     description="Dependency-aware workflow and DAG scheduling engine.",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -23,9 +30,7 @@ app.add_middleware(
 )
 
 
-@app.on_event("startup")
-def on_startup():
-    Base.metadata.create_all(bind=engine)
+
 
 
 @app.get("/health")

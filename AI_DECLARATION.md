@@ -9,9 +9,9 @@
 Claude (Anthropic) was used throughout development for: architecture planning
 and review, scaffolding the FastAPI project structure, drafting and refining
 the DAG engine, scheduler, and AI-suggestion service, writing and reviewing
-the pytest suite, drafting documentation (this file, the README, and
-ARCHITECTURE.md), and debugging assistance. Every generated file was reviewed
-by the development team before being committed, and the core algorithmic
+the pytest suite, drafting documentation (this file and the README),
+and debugging assistance. Google Gemini / Antigravity was additionally used for frontend testing, security auditing and hardening, seed-data fixes, and AI UX polish.
+Every generated file was reviewed by the development team before being committed, and the core algorithmic
 logic (cycle detection, the no-compounding forward-relaxation scheduler, and
 the readiness cascade) was traced by hand against the required test scenarios
 from the problem statement before being trusted.
@@ -46,5 +46,5 @@ model call, clearly labeled `"mode": "mock"` in the API response and in the
 UI, so the app is fully demoable offline without misrepresenting a canned
 response as a live AI call.
 
-See `docs/ARCHITECTURE.md` → "AI Dependency Assistant" for the full prompt
+See `README.md` → "AI Dependency Assistant" for the full prompt
 and grounding design.
